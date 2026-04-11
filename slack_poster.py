@@ -1,0 +1,68 @@
+"""Post collaged images to Slack."""
+import logging
+import time
+from pathlib import Path
+
+from slack_sdk import WebClient
+from slack_fetcher import find_channel_id
+
+logger = logging.getLogger(__name__)
+
+
+def post_collages(token: str, channel: str, image_paths: list[Path], bot_name: str = "collage-bot", threaded: bool = True) -> str:
+    """Post collage images to Slack. Returns the parent message timestamp."""
+    client = WebClient(token=token)
+    channel_name = channel.lstrip("#")
+    channel_id = find_channel_id(client, channel_name)
+    if not channel_id:
+        raise ValueError(f"Channel #{channel_name} not found")
+
+    if threaded:
+        msg = client.chat_postMessage(channel=channel_id, text=f":scissors: *{bot_name}*")
+        thread_ts = msg["ts"]
+        for i, path in enumerate(image_paths):
+            _upload_with_retry(
+                client,
+                channel=channel_id,
+                file=str(path),
+                filename=path.name,
+                title=f"collage {i + 1}",
+                thread_ts=thread_ts,
+            )
+            logger.info(f"Uploaded {path.name}")
+        return thread_ts
+    else:
+        file_uploads = [
+            {"file": str(path), "filename": path.name, "title": f"collage {i + 1}"}
+            for i, path in enumerate(image_paths)
+        ]
+        resp = _upload_with_retry(
+            client,
+            channel=channel_id,
+            file_uploads=file_uploads,
+            initial_comment=f":scissors: *{bot_name}*",
+        )
+        logger.info(f"Uploaded {len(image_paths)} images as single message")
+        # Extract message ts from file share info
+        files = resp.get("files") or [resp.get("file", {})]
+        for f in files:
+            for visibility in ("public", "private"):
+                for ch_id, msgs in f.get("shares", {}).get(visibility, {}).items():
+                    if ch_id == channel_id and msgs:
+                        return msgs[0]["ts"]
+        # Fallback if shares not available
+        hist = client.conversations_history(channel=channel_id, limit=1)
+        return hist["messages"][0]["ts"]
+
+
+def _upload_with_retry(client: WebClient, max_retries: int = 3, **kwargs) -> dict:
+    for attempt in range(max_retries):
+        try:
+            return client.files_upload_v2(**kwargs)
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 5 * (attempt + 1)
+                logger.warning(f"Upload failed (attempt {attempt + 1}), retrying in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                raise
