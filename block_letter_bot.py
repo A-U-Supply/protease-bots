@@ -212,7 +212,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     max_h   = max(d[3] for d in char_data)
 
     pad    = 40
-    out_w  = total_w + iso_dx + 2 * pad
+    out_w  = total_w + 2 * iso_dx + 2 * pad
     out_h  = max_h   + iso_dy + 2 * pad
 
     output = np.zeros((out_h, out_w, 3), dtype=np.float32)
