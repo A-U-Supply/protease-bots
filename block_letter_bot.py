@@ -84,12 +84,17 @@ _FONT_CATALOG = [
         "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
         "/usr/share/fonts/ubuntu/Ubuntu-B.ttf",
     ]),
-    # macOS fallbacks
-    ("Arial Black",  ["/System/Library/Fonts/Supplemental/Arial Black.ttf"]),
-    ("Impact",       ["/System/Library/Fonts/Supplemental/Impact.ttf"]),
-    ("Arial Bold",   ["/System/Library/Fonts/Supplemental/Arial Bold.ttf"]),
-    ("Verdana Bold", ["/System/Library/Fonts/Supplemental/Verdana Bold.ttf"]),
-    ("Helvetica",    ["/System/Library/Fonts/Helvetica.ttc"]),
+    # macOS — wide variety: sans, serif, condensed, monospace
+    ("Impact",            ["/System/Library/Fonts/Supplemental/Impact.ttf"]),
+    ("Georgia Bold",      ["/System/Library/Fonts/Supplemental/Georgia Bold.ttf"]),
+    ("Times New Roman Bold", ["/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf"]),
+    ("Courier New Bold",  ["/System/Library/Fonts/Supplemental/Courier New Bold.ttf"]),
+    ("DIN Condensed Bold",["/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf"]),
+    ("DIN Alternate Bold",["/System/Library/Fonts/Supplemental/DIN Alternate Bold.ttf"]),
+    ("Trebuchet MS Bold", ["/System/Library/Fonts/Supplemental/Trebuchet MS Bold.ttf"]),
+    ("Arial Black",       ["/System/Library/Fonts/Supplemental/Arial Black.ttf"]),
+    ("Verdana Bold",      ["/System/Library/Fonts/Supplemental/Verdana Bold.ttf"]),
+    ("Arial Narrow Bold", ["/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf"]),
 ]
 
 
