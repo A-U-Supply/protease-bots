@@ -1,0 +1,45 @@
+name: Run Circle Limit Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_channel:
+        description: 'Channel to fetch images from'
+        default: 'image-gen'
+      post_channel:
+        description: 'Channel to post results to'
+        default: 'img-junkyard'
+      zoom:
+        description: 'Tile ring density; higher = more rings visible (default 15.0)'
+        default: '15.0'
+      radius:
+        description: 'Disk radius as fraction of image half-side (default 0.95)'
+        default: '0.95'
+      tile:
+        description: 'Tile source as repeating grid (recommended)'
+        type: boolean
+        default: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run circle limit bot
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python circle_limit_bot.py \
+            --source-channel "${{ inputs.source_channel }}" \
+            --post-channel "${{ inputs.post_channel }}" \
+            --zoom "${{ inputs.zoom }}" \
+            --radius "${{ inputs.radius }}" \
+            ${{ inputs.tile && '--tile' || '' }}
