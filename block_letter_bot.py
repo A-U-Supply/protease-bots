@@ -53,24 +53,66 @@ WORD_LIST = [
     "PRISM", "SHIFT", "SPARK", "TRACE", "VEIL",
 ]
 
-# Try these font paths in order (covers Ubuntu CI + macOS dev)
-_FONT_PATHS = [
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-    "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
-    "/System/Library/Fonts/Supplemental/Arial Black.ttf",
-    "/System/Library/Fonts/Supplemental/Impact.ttf",
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    "/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
+# Font catalog: (display_name, [path_candidates]) — multiple paths handle
+# different distro layouts for the same font.
+_FONT_CATALOG = [
+    ("Liberation Sans Bold", [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+    ]),
+    ("Liberation Serif Bold", [
+        "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+        "/usr/share/fonts/liberation/LiberationSerif-Bold.ttf",
+    ]),
+    ("DejaVu Sans Bold", [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    ]),
+    ("DejaVu Serif Bold", [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSerif-Bold.ttf",
+    ]),
+    ("FreeSans Bold", [
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        "/usr/share/fonts/freefont/FreeSansBold.ttf",
+    ]),
+    ("FreeSerif Bold", [
+        "/usr/share/fonts/truetype/freefont/FreeSerifBold.ttf",
+        "/usr/share/fonts/freefont/FreeSerifBold.ttf",
+    ]),
+    ("Ubuntu Bold", [
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-B.ttf",
+        "/usr/share/fonts/ubuntu/Ubuntu-B.ttf",
+    ]),
+    # macOS fallbacks
+    ("Arial Black",  ["/System/Library/Fonts/Supplemental/Arial Black.ttf"]),
+    ("Impact",       ["/System/Library/Fonts/Supplemental/Impact.ttf"]),
+    ("Arial Bold",   ["/System/Library/Fonts/Supplemental/Arial Bold.ttf"]),
+    ("Verdana Bold", ["/System/Library/Fonts/Supplemental/Verdana Bold.ttf"]),
+    ("Helvetica",    ["/System/Library/Fonts/Helvetica.ttc"]),
 ]
 
 
-def _load_font(size):
-    for path in _FONT_PATHS:
+def _available_fonts():
+    """Return list of (name, path) for every catalog font present on disk."""
+    available = []
+    for name, paths in _FONT_CATALOG:
+        for p in paths:
+            if Path(p).exists():
+                available.append((name, p))
+                break
+    return available
+
+
+def _load_font(size, font_path=None):
+    candidates = [font_path] if font_path else []
+    for _name, paths in _FONT_CATALOG:
+        candidates.extend(paths)
+    for p in candidates:
+        if p is None:
+            continue
         try:
-            return ImageFont.truetype(path, size)
+            return ImageFont.truetype(p, size)
         except (IOError, OSError):
             continue
     logger.warning("No truetype font found, falling back to default")
@@ -170,7 +212,8 @@ def _paint_edge_extrusion(output, src_f, x0, y0, edge_mask, iso_dx, iso_dy,
 
 
 def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
-                      letter_spacing=12, shade_top=0.78, shade_right=0.52):
+                      letter_spacing=12, shade_top=0.78, shade_right=0.52,
+                      font_path=None):
     """Render the source image as isometric 3D block letter texture.
 
     Args:
@@ -186,7 +229,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     Returns:
         uint8 (out_H, out_W, 3) rendered image
     """
-    font = _load_font(font_size)
+    font = _load_font(font_size, font_path)
 
     rad = math.radians(angle_deg)
     iso_dx = int(depth_px * math.cos(rad))   # rightward component of extrusion
@@ -345,6 +388,14 @@ def main():
     out_dir    = args.output_dir / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    available_fonts = _available_fonts()
+    if available_fonts:
+        chosen_font_name, chosen_font_path = random.choice(available_fonts)
+        logger.info(f"Using font: {chosen_font_name}")
+    else:
+        chosen_font_name, chosen_font_path = "default", None
+        logger.warning("No catalog fonts found, using PIL default")
+
     logger.info(f"Fetching 3 images from #{args.source_channel}...")
     source_paths = list(fetch_random_images(token, args.source_channel, 3, source_dir))
 
@@ -367,7 +418,8 @@ def main():
             band = arr[y0:y1, :]
             logger.info(f"  Row {j + 1}: '{row_text}'")
             result = render_block_word(row_text, band, font_size=args.font_size,
-                                       depth_px=args.depth, angle_deg=args.angle)
+                                       depth_px=args.depth, angle_deg=args.angle,
+                                       font_path=chosen_font_path)
             row_images.append(result)
 
         # Stack rows vertically, left-aligned, 20px gap
