@@ -181,36 +181,25 @@ def _fill_edge_gaps(mask):
     several columns apart (e.g. up to 7px at the top of an O).  The extrusion
     of these sparse rows leaves transparent stripes.
 
-    Does two passes (forward then backward) so that bridges added in one pass
-    propagate into the next, and gaps in either direction are closed.
+    For each pair of consecutive rows, matches each edge pixel in row r to its
+    nearest-column neighbour in row r+1 and fills all intermediate columns in
+    row r+1 as bridge pixels, ensuring extrusion strips are contiguous.
 
     Apply transposed (mask.T → fill → .T) for top_edge, where the gap
     direction is along columns instead of rows.
     """
     H, W = mask.shape
     out = mask.copy()
-
-    def _bridge(arr, r_src, r_dst):
-        src = np.where(arr[r_src])[0]
-        dst = np.where(arr[r_dst])[0]
-        if not len(src) or not len(dst):
-            return
-        for c in src:
-            nearest = dst[np.argmin(np.abs(dst - c))]
+    for r in range(H - 1):
+        cur = np.where(mask[r])[0]
+        nxt = np.where(mask[r + 1])[0]
+        if not len(cur) or not len(nxt):
+            continue
+        for c in cur:
+            nearest = nxt[np.argmin(np.abs(nxt - c))]
             lo, hi = min(c, nearest), max(c, nearest)
             if hi > lo:
-                arr[r_dst, lo:hi] = True
-
-    # Forward pass: row r → row r+1 (also fills row r based on r+1 to catch retreating edges)
-    for r in range(H - 1):
-        _bridge(out, r, r + 1)
-        _bridge(out, r + 1, r)
-
-    # Backward pass: catches any residual gaps from complex curves
-    for r in range(H - 2, -1, -1):
-        _bridge(out, r + 1, r)
-        _bridge(out, r, r + 1)
-
+                out[r + 1, lo:hi] = True
     return out
 
 
@@ -350,7 +339,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         # Glyph mask for front face
         glyph_img = Image.new('L', (W, H), 0)
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
-        glyph_mask = np.array(glyph_img) > 64
+        glyph_mask = np.array(glyph_img) > 128
 
         # Edge masks: all right-facing and top-facing edges, including inner holes
         right_next = np.zeros_like(glyph_mask)
@@ -386,7 +375,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
 
     for origin, va, vb, gm, gW, gH, xmn, xmx, ymn, ymx in front_faces:
         _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx, ymn, ymx,
-                    gamma=0.65)
+                    gamma=0.8)
 
     return output.clip(0, 255).astype(np.uint8)
 
