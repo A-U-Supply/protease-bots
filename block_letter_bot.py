@@ -120,7 +120,8 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
         src_y_max = sh - 1
     sx = (src_x_min + u[inside] * (src_x_max - src_x_min)).clip(0, sw - 1).astype(np.int32)
     sy = (src_y_min + v[inside] * (src_y_max - src_y_min)).clip(0, sh - 1).astype(np.int32)
-    output[inside] = (src_f[sy, sx] * brightness).clip(0, 255)
+    rgb = (src_f[sy, sx] * brightness).clip(0, 255)
+    output[inside] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
 def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
@@ -173,7 +174,8 @@ def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
         sy = np.broadcast_to(src_y[None, :], px.shape)
 
     mask = (px >= 0) & (px < output.shape[1]) & (py >= 0) & (py < output.shape[0])
-    output[py[mask], px[mask]] = (src_f[sy[mask], sx[mask]] * brightness).clip(0, 255)
+    rgb = (src_f[sy[mask], sx[mask]] * brightness).clip(0, 255)
+    output[py[mask], px[mask]] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
 def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
@@ -215,7 +217,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     out_w  = total_w + 2 * iso_dx + 2 * pad
     out_h  = max_h   + iso_dy + 2 * pad
 
-    output = np.zeros((out_h, out_w, 3), dtype=np.float32)
+    output = np.zeros((out_h, out_w, 4), dtype=np.float32)
     src_f  = src_arr.astype(np.float32)
 
     xs = np.arange(out_w, dtype=np.float64)
@@ -378,7 +380,7 @@ def main():
         gap     = 20
         max_w   = max(r.shape[1] for r in row_images)
         total_h = sum(r.shape[0] for r in row_images) + gap * (n_rows - 1)
-        canvas  = np.zeros((total_h, max_w, 3), dtype=np.uint8)
+        canvas  = np.zeros((total_h, max_w, 4), dtype=np.uint8)
         y = 0
         for r in row_images:
             canvas[y:y + r.shape[0], :r.shape[1]] = r
