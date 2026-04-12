@@ -378,8 +378,12 @@ def main():
         for t in raw_titles:
             # Add every non-empty line as a separate candidate
             for line in t.split("\n"):
+                # Skip lines containing URLs
+                if re.search(r"https?://|www\.", line, re.IGNORECASE):
+                    continue
                 cleaned = re.sub(r"[^A-Za-z\s]", "", line).strip().upper()
-                if cleaned:
+                # Skip lines that are a single unbroken run (likely a URL residue or code)
+                if cleaned and len(cleaned.split()) >= 1 and max(len(w) for w in cleaned.split()) <= 20:
                     word_list.append(cleaned)
         if not word_list:
             word_list = [w.strip().upper() for w in args.words.split(",") if w.strip()]
