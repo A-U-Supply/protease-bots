@@ -27,6 +27,24 @@ from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
+
+def wrap_text(text, max_chars=15):
+    """Wrap text at word boundaries, returning a list of line strings."""
+    words = text.split()
+    lines, current, length = [], [], 0
+    for word in words:
+        added = length + (1 if current else 0) + len(word)
+        if current and added > max_chars:
+            lines.append(' '.join(current))
+            current, length = [word], len(word)
+        else:
+            current.append(word)
+            length = added
+    if current:
+        lines.append(' '.join(current))
+    return lines
+
+
 WORD_LIST = [
     "PULSE", "WAVE", "FLUX", "ECHO", "LOOP",
     "VOID", "APEX", "NEON", "GRID", "HAZE",
@@ -279,8 +297,10 @@ def main():
                         help="Slack channel to fetch text from (default: song-titles)")
     parser.add_argument("--words", default="",
                         help="Comma-separated fallback word list (used if --text-channel is empty)")
-    parser.add_argument("--font-size", type=int, default=200)
-    parser.add_argument("--depth",     type=int, default=70,
+    parser.add_argument("--font-size",  type=int, default=200)
+    parser.add_argument("--max-chars",  type=int, default=15,
+                        help="Max characters per wrapped line (default 15)")
+    parser.add_argument("--depth",      type=int, default=70,
                         help="Extrusion depth in pixels (default 70)")
     parser.add_argument("--angle",     type=float, default=30.0,
                         help="Isometric angle in degrees (default 30)")
@@ -299,12 +319,11 @@ def main():
         raw_titles = fetch_random_message_texts(token, args.text_channel, 50)
         word_list = []
         for t in raw_titles:
-            # Take first line only — ignore multi-line messages
-            first_line = t.split("\n")[0].strip()
-            cleaned = re.sub(r"[^A-Za-z\s]", "", first_line).strip().upper()
-            # Skip if too long (likely a sentence, not a title)
-            if cleaned and len(cleaned) <= 40:
-                word_list.append(cleaned)
+            # Add every non-empty line as a separate candidate
+            for line in t.split("\n"):
+                cleaned = re.sub(r"[^A-Za-z\s]", "", line).strip().upper()
+                if cleaned:
+                    word_list.append(cleaned)
         if not word_list:
             word_list = [w.strip().upper() for w in args.words.split(",") if w.strip()]
     else:
@@ -322,15 +341,39 @@ def main():
 
     output_paths = []
     for i, path in enumerate(source_paths, start=1):
-        img  = Image.open(path).convert("RGB")
-        word = random.choice(word_list)
-        logger.info(f"Image {i}: {img.size[0]}×{img.size[1]}, word='{word}', rendering...")
-        arr    = np.array(img)
-        result = render_block_word(word, arr, font_size=args.font_size,
-                                   depth_px=args.depth, angle_deg=args.angle)
+        img = Image.open(path).convert("RGB")
+        arr = np.array(img)
+        src_h, src_w = arr.shape[:2]
+
+        title = random.choice(word_list)
+        rows  = wrap_text(title, max_chars=args.max_chars)
+        logger.info(f"Image {i}: {src_w}×{src_h}, title='{title}' → {len(rows)} row(s)")
+
+        # Each row gets a horizontal band of the source image
+        n_rows = len(rows)
+        row_images = []
+        for j, row_text in enumerate(rows):
+            y0 = int(j / n_rows * src_h)
+            y1 = int((j + 1) / n_rows * src_h)
+            band = arr[y0:y1, :]
+            logger.info(f"  Row {j + 1}: '{row_text}'")
+            result = render_block_word(row_text, band, font_size=args.font_size,
+                                       depth_px=args.depth, angle_deg=args.angle)
+            row_images.append(result)
+
+        # Stack rows vertically, left-aligned, 20px gap
+        gap     = 20
+        max_w   = max(r.shape[1] for r in row_images)
+        total_h = sum(r.shape[0] for r in row_images) + gap * (n_rows - 1)
+        canvas  = np.zeros((total_h, max_w, 3), dtype=np.uint8)
+        y = 0
+        for r in row_images:
+            canvas[y:y + r.shape[0], :r.shape[1]] = r
+            y += r.shape[0] + gap
+
         dest = out_dir / f"block_letter_result_{i}.png"
-        Image.fromarray(result).save(dest)
-        logger.info(f"  Saved {dest.name} ({result.shape[1]}×{result.shape[0]})")
+        Image.fromarray(canvas).save(dest)
+        logger.info(f"  Saved {dest.name} ({canvas.shape[1]}×{canvas.shape[0]})")
         output_paths.append(dest)
 
     if not args.no_post:
