@@ -233,11 +233,23 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     n_letters = len(char_data)
     src_sh, src_sw = src_f.shape[:2]
 
-    # Square crop size: divide source width by number of letters
-    square = src_sw // max(n_letters, 1)
-    # Vertically center the crop within the source image
-    crop_y0 = max(0, src_sh // 2 - square // 2)
-    crop_y1 = min(src_sh - 1, crop_y0 + square - 1)
+    # Find the largest square tile size that yields at least n_letters tiles
+    n_needed = max(n_letters, 1)
+    lo, hi = 1, min(src_sw, src_sh)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if (src_sw // mid) * (src_sh // mid) >= n_needed:
+            lo = mid
+        else:
+            hi = mid - 1
+    tile_size = lo
+    cols = src_sw // tile_size
+    rows = src_sh // tile_size
+
+    # Shuffle all tile origins so each letter gets a random region
+    tile_origins = [(r * tile_size, c * tile_size)
+                    for r in range(rows) for c in range(cols)]
+    random.shuffle(tile_origins)
 
     for i, (c, bbox, W, H) in enumerate(char_data):
         x0 = x_cursor
@@ -262,11 +274,12 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         x_right = np.where(glyph_mask, col_idx[None, :], -1).max(axis=1)   # (H,) rightmost x per row
         y_top   = np.where(glyph_mask, row_idx[:, None], H).min(axis=0)    # (W,) topmost y per col
 
-        # Square crop for this letter
-        x_min = i * square
-        x_max = min(x_min + square - 1, src_sw - 1)
-        y_min = crop_y0
-        y_max = crop_y1
+        # Assign a random tile from the grid to this letter
+        ty, tx = tile_origins[i]
+        x_min = tx
+        x_max = tx + tile_size - 1
+        y_min = ty
+        y_max = ty + tile_size - 1
 
         # Paint edge extrusions (right then top; front face will overdraw)
         _paint_edge_extrusion(output, src_f, x0, y0, x_right, iso_dx, iso_dy,
