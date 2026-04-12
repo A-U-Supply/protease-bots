@@ -87,15 +87,19 @@ def circle_limit_warp(img_arr: np.ndarray, radius: float = 0.95,
     source coordinates. With tile=True the source image tiles the resulting
     infinite plane, producing the Circle Limit repetition pattern.
 
+    Pixels outside the disk are filled by inverting their coordinates through
+    the boundary (z → R²/|z|² · z) before applying the warp, so the exterior
+    shows a reflected mirror of the interior pattern rather than black.
+
     Args:
         img_arr: uint8 (H, W, 3) source image
         radius:  fraction of image half-side that the disk occupies (default 0.95)
-        zoom:    controls how many tile rings appear; higher = more rings (default 25.0)
+        zoom:    controls how many tile rings appear; higher = more rings (default 6.0)
         tile:    tile source as Cartesian grid (strongly recommended)
         cx, cy:  centre of the disk (defaults to image centre)
 
     Returns:
-        uint8 (H, W, 3) warped image (black outside the disk)
+        uint8 (H, W, 3) warped image
     """
     h, w = img_arr.shape[:2]
     if cx is None:
@@ -113,9 +117,14 @@ def circle_limit_warp(img_arr: np.ndarray, radius: float = 0.95,
     zi = (yy - cy) / norm
     r = np.sqrt(zr ** 2 + zi ** 2)
 
-    outside_disk = r >= radius
+    # For pixels outside the disk, invert through the boundary: z → R²/|z|² · z
+    r2 = np.maximum(zr ** 2 + zi ** 2, 1e-10)
+    inversion_scale = np.where(r < radius, 1.0, (radius ** 2) / r2)
+    zr_eff = zr * inversion_scale
+    zi_eff = zi * inversion_scale
 
-    r_clamped = np.minimum(r, radius * (1.0 - 1e-7))
+    r_eff = np.sqrt(zr_eff ** 2 + zi_eff ** 2)
+    r_clamped = np.minimum(r_eff, radius * (1.0 - 1e-7))
     r_safe = np.maximum(r_clamped, 1e-10)
 
     hyperbolic_r = 2.0 * np.arctanh(r_clamped / radius)
@@ -123,16 +132,13 @@ def circle_limit_warp(img_arr: np.ndarray, radius: float = 0.95,
     source_scale = norm / (2.0 * math.pi) * zoom
     scale_factor = hyperbolic_r / r_safe * source_scale
 
-    x_in = cx + scale_factor * zr
-    y_in = cy + scale_factor * zi
+    x_in = cx + scale_factor * zr_eff
+    y_in = cy + scale_factor * zi_eff
 
     if tile:
-        result = _bilinear_wrap(img_arr, x_in, y_in)
+        return _bilinear_wrap(img_arr, x_in, y_in)
     else:
-        result = _bilinear(img_arr, x_in, y_in)
-
-    result[outside_disk] = 0
-    return result
+        return _bilinear(img_arr, x_in, y_in)
 
 
 def main():
