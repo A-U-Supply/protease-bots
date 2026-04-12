@@ -341,11 +341,18 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
 
-        # Edge masks: all right-facing and top-facing edges, including inner holes
-        right_next = np.zeros_like(glyph_mask)
-        right_next[:, :-1] = glyph_mask[:, 1:]
-        right_edge = glyph_mask & ~right_next   # glyph pixel with no glyph to the right
+        # Right edge: only the outermost right pixel per row.
+        # Inner hole boundaries (e.g. inside O, B, P) must not be extruded as
+        # a right face — they create phantom layers behind the letter.
+        right_edge = np.zeros_like(glyph_mask)
+        for r in range(H):
+            cols = np.where(glyph_mask[r])[0]
+            if len(cols):
+                right_edge[r, cols[-1]] = True
 
+        # Top edge: topmost pixel per column, including inner hole tops.
+        # Inner hole tops (e.g. the ceiling of O's counter) ARE visible from
+        # above and should be extruded as a top face.
         top_above = np.zeros_like(glyph_mask)
         top_above[1:, :] = glyph_mask[:-1, :]
         top_edge = glyph_mask & ~top_above      # glyph pixel with no glyph above
@@ -375,7 +382,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
 
     for origin, va, vb, gm, gW, gH, xmn, xmx, ymn, ymx in front_faces:
         _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx, ymn, ymx,
-                    gamma=0.8)
+                    gamma=0.65)
 
     return output.clip(0, 255).astype(np.uint8)
 
