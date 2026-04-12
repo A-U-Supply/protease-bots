@@ -143,7 +143,8 @@ def _face_uv(xx, yy, origin, vec_a, vec_b):
 
 def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
                 glyph_mask=None, glyph_W=None, glyph_H=None,
-                src_x_min=0, src_x_max=None, src_y_min=0, src_y_max=None):
+                src_x_min=0, src_x_max=None, src_y_min=0, src_y_max=None,
+                white_mix=0.0):
     """Sample source image onto a parallelogram face and write into output.
 
     src_x_min/src_x_max and src_y_min/src_y_max define the square crop of
@@ -167,7 +168,7 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
         src_y_max = sh - 1
     sx = (src_x_min + u[inside] * (src_x_max - src_x_min)).clip(0, sw - 1).astype(np.int32)
     sy = (src_y_min + v[inside] * (src_y_max - src_y_min)).clip(0, sh - 1).astype(np.int32)
-    rgb = (src_f[sy, sx] * brightness).clip(0, 255)
+    rgb = (src_f[sy, sx] * brightness * (1.0 - white_mix) + 255.0 * white_mix).clip(0, 255)
     output[inside] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
@@ -371,7 +372,8 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         x_cursor += W + letter_spacing
 
     for origin, va, vb, gm, gW, gH, xmn, xmx, ymn, ymx in front_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx, ymn, ymx)
+        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx, ymn, ymx,
+                    white_mix=0.05)
 
     return output.clip(0, 255).astype(np.uint8)
 
