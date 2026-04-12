@@ -1,0 +1,49 @@
+name: Run Joukowski Warp Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_channel:
+        description: 'Channel to fetch images from'
+        default: 'image-gen'
+      post_channel:
+        description: 'Channel to post results to'
+        default: 'img-junkyard'
+      scale:
+        description: 'Units spanned by short half-side (default 1.5)'
+        default: '1.5'
+      shift_r:
+        description: 'Real singularity offset — moves vortex left/right (default 0.3)'
+        default: '0.3'
+      shift_i:
+        description: 'Imaginary singularity offset — moves vortex up/down (default 0.0)'
+        default: '0.0'
+      tile:
+        description: 'Tile source as Cartesian grid before warping'
+        type: boolean
+        default: true
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Joukowski warp bot
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python joukowski_warp_bot.py \
+            --source-channel "${{ inputs.source_channel }}" \
+            --post-channel "${{ inputs.post_channel }}" \
+            --scale "${{ inputs.scale }}" \
+            --shift-r "${{ inputs.shift_r }}" \
+            --shift-i "${{ inputs.shift_i }}" \
+            ${{ inputs.tile && '--tile' || '' }}
