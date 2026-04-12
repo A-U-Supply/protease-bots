@@ -169,19 +169,30 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         vec_right = np.array([W, 0.0])
         vec_down  = np.array([0.0, H])
 
+        # Skip non-renderable characters (e.g. space has H=0)
+        if W == 0 or H == 0:
+            x_cursor += W + letter_spacing
+            continue
+
         # Glyph mask for front face
         glyph_img = Image.new('L', (W, H), 0)
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
+
+        # Project glyph silhouette onto top and right faces
+        col_has_glyph = glyph_mask.any(axis=0)           # (W,) — column presence
+        row_has_glyph = glyph_mask.any(axis=1)           # (H,) — row presence
+        top_mask   = np.tile(col_has_glyph,          (H, 1))  # (H, W)
+        right_mask = np.tile(row_has_glyph[:, None], (1, W))  # (H, W)
 
         # Horizontal strip of source image for this letter
         x_min = int(i / n_letters * src_sw)
         x_max = int((i + 1) / n_letters * src_sw) - 1
 
         # Right face: top-right corner → back → down
-        right_faces.append(((x0 + W, y0), vec_back, vec_down, None, None, None, x_min, x_max))
+        right_faces.append(((x0 + W, y0), vec_back, vec_down, right_mask, W, H, x_min, x_max))
         # Top face: top-left corner → right → back
-        top_faces.append(((x0, y0), vec_right, vec_back, None, None, None, x_min, x_max))
+        top_faces.append(((x0, y0), vec_right, vec_back, top_mask, W, H, x_min, x_max))
         # Front face: top-left corner → right → down, masked to glyph
         front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H, x_min, x_max))
 
