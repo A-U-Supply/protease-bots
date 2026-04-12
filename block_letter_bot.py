@@ -171,19 +171,32 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
     output[inside] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
-def _close_diagonal_gaps(mask):
-    """Add bridge pixels between diagonally adjacent edge pixels.
+def _fill_edge_gaps(mask):
+    """Fill gaps between consecutive rows of edge pixels.
 
-    When two edge pixels are diagonally adjacent (offset by 1 in both row and col),
-    their extruded strips leave a 1-pixel diagonal gap.  Adding a bridge pixel for
-    each such pair ensures the strips overlap and no transparent holes appear.
+    For curved/diagonal letter edges, consecutive rows can have edge pixels
+    several columns apart (e.g. up to 7px at the top of an O).  The extrusion
+    of these sparse rows leaves transparent stripes.
+
+    For each pair of consecutive rows, matches each edge pixel in row r to its
+    nearest-column neighbour in row r+1 and fills all intermediate columns in
+    row r+1 as bridge pixels, ensuring extrusion strips are contiguous.
+
+    Apply transposed (mask.T → fill → .T) for top_edge, where the gap
+    direction is along columns instead of rows.
     """
+    H, W = mask.shape
     out = mask.copy()
-    if mask.shape[0] > 1 and mask.shape[1] > 1:
-        # Down-right pair: (r,c) and (r+1,c+1) → bridge at (r+1, c)
-        out[1:, :-1] |= mask[:-1, :-1] & mask[1:, 1:]
-        # Down-left pair:  (r,c+1) and (r+1,c)  → bridge at (r+1, c+1)
-        out[1:, 1:]  |= mask[:-1, 1:]  & mask[1:, :-1]
+    for r in range(H - 1):
+        cur = np.where(mask[r])[0]
+        nxt = np.where(mask[r + 1])[0]
+        if not len(cur) or not len(nxt):
+            continue
+        for c in cur:
+            nearest = nxt[np.argmin(np.abs(nxt - c))]
+            lo, hi = min(c, nearest), max(c, nearest)
+            if hi > lo:
+                out[r + 1, lo:hi] = True
     return out
 
 
@@ -334,9 +347,9 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         top_above[1:, :] = glyph_mask[:-1, :]
         top_edge = glyph_mask & ~top_above      # glyph pixel with no glyph above
 
-        # Bridge diagonal gaps so curved/diagonal edges extrude without holes
-        right_edge = _close_diagonal_gaps(right_edge)
-        top_edge   = _close_diagonal_gaps(top_edge)
+        # Fill column/row gaps so curved edges extrude without transparent stripes
+        right_edge = _fill_edge_gaps(right_edge)
+        top_edge   = _fill_edge_gaps(top_edge.T).T
 
         # Assign a random tile from the grid to this letter
         ty, tx = tile_origins[i]
