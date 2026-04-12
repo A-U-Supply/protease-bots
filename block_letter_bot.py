@@ -103,6 +103,59 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
     output[inside] = (src_f[sy, sx] * brightness).clip(0, 255)
 
 
+def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
+                          brightness, src_x_min, src_x_max, face):
+    """Paint an extruded edge face that follows the letter contour.
+
+    face='right': edge_profile[y] = rightmost x in glyph row y  (-1 = no pixels)
+    face='top':   edge_profile[x] = topmost  y in glyph col x   (H = no pixels)
+
+    For each valid row/col, extrudes the edge pixel along the isometric
+    direction (iso_dx, -iso_dy), sampling the source image along the way.
+    """
+    sh, sw = src_f.shape[:2]
+    if src_x_max is None:
+        src_x_max = sw - 1
+    n_steps = max(abs(iso_dx), abs(iso_dy), 1) + 1
+    ts = np.linspace(0, 1, n_steps)   # (n_steps,)
+
+    if face == 'right':
+        valid = np.where(edge_profile >= 0)[0]   # rows with pixels
+        if not len(valid):
+            return
+        xr = edge_profile[valid].astype(float)   # (n_valid,)
+        H_total = len(edge_profile)
+
+        # Output pixel coords: (n_valid, n_steps)
+        px = np.round(x0 + xr[:, None] + ts[None, :] * iso_dx).astype(int)
+        py = np.round(y0 + valid[:, None] - ts[None, :] * iso_dy).astype(int)
+
+        # Source coords
+        src_x = np.clip(src_x_min + ts * (src_x_max - src_x_min), 0, sw - 1).astype(int)
+        src_y = np.clip(valid / max(H_total - 1, 1) * (sh - 1), 0, sh - 1).astype(int)
+        sx = np.broadcast_to(src_x[None, :], px.shape)
+        sy = np.broadcast_to(src_y[:, None], px.shape)
+
+    else:  # face == 'top'
+        W_total = len(edge_profile)
+        valid = np.where(edge_profile < W_total)[0]   # cols with pixels
+        if not len(valid):
+            return
+        yt = edge_profile[valid].astype(float)         # (n_valid,)
+
+        px = np.round(x0 + valid[:, None] + ts[None, :] * iso_dx).astype(int)
+        py = np.round(y0 + yt[:, None]    - ts[None, :] * iso_dy).astype(int)
+
+        src_x = np.clip(src_x_min + valid / max(W_total - 1, 1) * (src_x_max - src_x_min),
+                        0, sw - 1).astype(int)
+        src_y = np.clip(ts * (sh - 1), 0, sh - 1).astype(int)
+        sx = np.broadcast_to(src_x[:, None], px.shape)
+        sy = np.broadcast_to(src_y[None, :], px.shape)
+
+    mask = (px >= 0) & (px < output.shape[1]) & (py >= 0) & (py < output.shape[0])
+    output[py[mask], px[mask]] = (src_f[sy[mask], sx[mask]] * brightness).clip(0, 255)
+
+
 def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
                       letter_spacing=12, shade_top=0.78, shade_right=0.52):
     """Render the source image as isometric 3D block letter texture.
@@ -154,9 +207,7 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
 
     vec_back = np.array([iso_dx, -iso_dy], dtype=float)  # extrusion direction
 
-    # Collect faces; paint right→top→front so front is on top
-    right_faces = []
-    top_faces   = []
+    # Collect front faces; paint edge extrusions first, then front face on top
     front_faces = []
 
     n_letters = len(char_data)
@@ -179,29 +230,27 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
 
-        # Project glyph silhouette onto top and right faces
-        col_has_glyph = glyph_mask.any(axis=0)           # (W,) — column presence
-        row_has_glyph = glyph_mask.any(axis=1)           # (H,) — row presence
-        top_mask   = np.tile(col_has_glyph,          (H, 1))  # (H, W)
-        right_mask = np.tile(row_has_glyph[:, None], (1, W))  # (H, W)
+        # Edge profiles for contour-following extrusion
+        col_idx = np.arange(W)
+        row_idx = np.arange(H)
+        x_right = np.where(glyph_mask, col_idx[None, :], -1).max(axis=1)   # (H,) rightmost x per row
+        y_top   = np.where(glyph_mask, row_idx[:, None], H).min(axis=0)    # (W,) topmost y per col
 
         # Horizontal strip of source image for this letter
         x_min = int(i / n_letters * src_sw)
         x_max = int((i + 1) / n_letters * src_sw) - 1
 
-        # Right face: top-right corner → back → down
-        right_faces.append(((x0 + W, y0), vec_back, vec_down, right_mask, W, H, x_min, x_max))
-        # Top face: top-left corner → right → back
-        top_faces.append(((x0, y0), vec_right, vec_back, top_mask, W, H, x_min, x_max))
+        # Paint edge extrusions (right then top; front face will overdraw)
+        _paint_edge_extrusion(output, src_f, x0, y0, x_right, iso_dx, iso_dy,
+                              shade_right, x_min, x_max, face='right')
+        _paint_edge_extrusion(output, src_f, x0, y0, y_top, iso_dx, iso_dy,
+                              shade_top, x_min, x_max, face='top')
+
         # Front face: top-left corner → right → down, masked to glyph
         front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H, x_min, x_max))
 
         x_cursor += W + letter_spacing
 
-    for origin, va, vb, gm, gW, gH, xmn, xmx in right_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_right, gm, gW, gH, xmn, xmx)
-    for origin, va, vb, gm, gW, gH, xmn, xmx in top_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_top, gm, gW, gH, xmn, xmx)
     for origin, va, vb, gm, gW, gH, xmn, xmx in front_faces:
         _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx)
 
