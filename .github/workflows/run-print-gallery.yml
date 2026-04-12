@@ -15,7 +15,7 @@ on:
       tile:
         description: 'Tile source as Cartesian grid before warping'
         type: boolean
-        default: false
+        default: true
 
 jobs:
   run:
