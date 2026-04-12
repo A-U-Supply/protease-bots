@@ -124,50 +124,41 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
     output[inside] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
-def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
+def _paint_edge_extrusion(output, src_f, x0, y0, edge_mask, iso_dx, iso_dy,
                           brightness, src_x_min, src_x_max, src_y_min, src_y_max, face):
-    """Paint an extruded edge face that follows the letter contour.
+    """Paint extruded edge faces following all letter contours including inner holes.
 
-    face='right': edge_profile[y] = rightmost x in glyph row y  (-1 = no pixels)
-    face='top':   edge_profile[x] = topmost  y in glyph col x   (H = no pixels)
+    edge_mask: (H, W) boolean — True at every edge pixel to extrude.
+      For face='right': pixels where glyph has no glyph to the right.
+      For face='top':   pixels where glyph has no glyph above.
 
-    For each valid row/col, extrudes the edge pixel along the isometric
-    direction (iso_dx, -iso_dy), sampling from the letter's square source crop.
+    Both outer boundaries and inner hole boundaries are included, so counters
+    in letters like O, B, P, R get correctly extruded inner walls.
     """
     sh, sw = src_f.shape[:2]
     n_steps = max(abs(iso_dx), abs(iso_dy), 1) + 1
-    ts = np.linspace(0, 1, n_steps)   # (n_steps,)
+    ts = np.linspace(0, 1, n_steps)
+
+    ys, xs = np.where(edge_mask)   # all edge pixel row/col indices
+    if not len(ys):
+        return
+
+    H, W = edge_mask.shape
+
+    # Output pixel coords: (n_edges, n_steps)
+    px = np.round(x0 + xs[:, None] + ts[None, :] * iso_dx).astype(int)
+    py = np.round(y0 + ys[:, None] - ts[None, :] * iso_dy).astype(int)
 
     if face == 'right':
-        valid = np.where(edge_profile >= 0)[0]   # rows with pixels
-        if not len(valid):
-            return
-        xr = edge_profile[valid].astype(float)   # (n_valid,)
-        H_total = len(edge_profile)
-
-        # Output pixel coords: (n_valid, n_steps)
-        px = np.round(x0 + xr[:, None] + ts[None, :] * iso_dx).astype(int)
-        py = np.round(y0 + valid[:, None] - ts[None, :] * iso_dy).astype(int)
-
-        # Source coords — t maps to x within crop, glyph row maps to y within crop
+        # t → source x (depth into extrusion), glyph row → source y
         src_x = np.clip(src_x_min + ts * (src_x_max - src_x_min), 0, sw - 1).astype(int)
-        src_y = np.clip(src_y_min + valid / max(H_total - 1, 1) * (src_y_max - src_y_min),
+        src_y = np.clip(src_y_min + ys / max(H - 1, 1) * (src_y_max - src_y_min),
                         0, sh - 1).astype(int)
         sx = np.broadcast_to(src_x[None, :], px.shape)
         sy = np.broadcast_to(src_y[:, None], px.shape)
-
     else:  # face == 'top'
-        W_total = len(edge_profile)
-        valid = np.where(edge_profile < W_total)[0]   # cols with pixels
-        if not len(valid):
-            return
-        yt = edge_profile[valid].astype(float)         # (n_valid,)
-
-        px = np.round(x0 + valid[:, None] + ts[None, :] * iso_dx).astype(int)
-        py = np.round(y0 + yt[:, None]    - ts[None, :] * iso_dy).astype(int)
-
-        # Source coords — glyph col maps to x within crop, t maps to y within crop
-        src_x = np.clip(src_x_min + valid / max(W_total - 1, 1) * (src_x_max - src_x_min),
+        # glyph col → source x, t → source y (depth into extrusion)
+        src_x = np.clip(src_x_min + xs / max(W - 1, 1) * (src_x_max - src_x_min),
                         0, sw - 1).astype(int)
         src_y = np.clip(src_y_min + ts * (src_y_max - src_y_min), 0, sh - 1).astype(int)
         sx = np.broadcast_to(src_x[:, None], px.shape)
@@ -270,11 +261,14 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
 
-        # Edge profiles for contour-following extrusion
-        col_idx = np.arange(W)
-        row_idx = np.arange(H)
-        x_right = np.where(glyph_mask, col_idx[None, :], -1).max(axis=1)   # (H,) rightmost x per row
-        y_top   = np.where(glyph_mask, row_idx[:, None], H).min(axis=0)    # (W,) topmost y per col
+        # Edge masks: all right-facing and top-facing edges, including inner holes
+        right_next = np.zeros_like(glyph_mask)
+        right_next[:, :-1] = glyph_mask[:, 1:]
+        right_edge = glyph_mask & ~right_next   # glyph pixel with no glyph to the right
+
+        top_above = np.zeros_like(glyph_mask)
+        top_above[1:, :] = glyph_mask[:-1, :]
+        top_edge = glyph_mask & ~top_above      # glyph pixel with no glyph above
 
         # Assign a random tile from the grid to this letter
         ty, tx = tile_origins[i]
@@ -284,9 +278,9 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         y_max = ty + tile_size - 1
 
         # Paint edge extrusions (right then top; front face will overdraw)
-        _paint_edge_extrusion(output, src_f, x0, y0, x_right, iso_dx, iso_dy,
+        _paint_edge_extrusion(output, src_f, x0, y0, right_edge, iso_dx, iso_dy,
                               shade_right, x_min, x_max, y_min, y_max, face='right')
-        _paint_edge_extrusion(output, src_f, x0, y0, y_top, iso_dx, iso_dy,
+        _paint_edge_extrusion(output, src_f, x0, y0, top_edge, iso_dx, iso_dy,
                               shade_top, x_min, x_max, y_min, y_max, face='top')
 
         # Front face: top-left corner → right → down, masked to glyph
