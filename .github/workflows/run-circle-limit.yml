@@ -10,11 +10,15 @@ on:
         description: 'Channel to post results to'
         default: 'img-junkyard'
       zoom:
-        description: 'Tile ring density; higher = more rings visible (default 15.0)'
-        default: '15.0'
+        description: 'Tile ring density; higher = more rings visible (default 25.0)'
+        default: '25.0'
       radius:
         description: 'Disk radius as fraction of image half-side (default 0.95)'
         default: '0.95'
+      polar:
+        description: 'Pre-warp source into circle before tiling (meta: circles within circle)'
+        type: boolean
+        default: true
       tile:
         description: 'Tile source as repeating grid (recommended)'
         type: boolean
@@ -42,4 +46,5 @@ jobs:
             --post-channel "${{ inputs.post_channel }}" \
             --zoom "${{ inputs.zoom }}" \
             --radius "${{ inputs.radius }}" \
+            ${{ inputs.polar && '--polar' || '' }} \
             ${{ inputs.tile && '--tile' || '' }}
