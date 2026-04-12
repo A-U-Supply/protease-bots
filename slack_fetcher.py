@@ -42,6 +42,40 @@ def _download_with_auth(url: str, token: str, timeout: int = 30) -> bytes:
     raise requests.TooManyRedirects(f"Too many redirects for {url}")
 
 
+def fetch_random_message_texts(token: str, channel_name: str, n: int) -> list[str]:
+    """Fetch up to n random text messages from a public channel.
+
+    Skips bot messages, join/leave events, and messages that are only
+    Slack mentions/links (starting with '<').
+    """
+    client = WebClient(token=token)
+    name = channel_name.lstrip("#")
+    channel_id = find_channel_id(client, name)
+    if not channel_id:
+        raise ValueError(f"Channel #{name} not found")
+
+    messages = []
+    cursor = None
+    while True:
+        kwargs = dict(channel=channel_id, limit=200)
+        if cursor:
+            kwargs["cursor"] = cursor
+        resp = client.conversations_history(**kwargs)
+        for msg in resp.get("messages", []):
+            text = msg.get("text", "").strip()
+            if text and msg.get("subtype") is None and not text.startswith("<"):
+                messages.append(text)
+        cursor = resp.get("response_metadata", {}).get("next_cursor")
+        if not cursor or len(messages) >= 500:
+            break
+
+    if not messages:
+        raise ValueError(f"No text messages found in #{name}")
+
+    random.shuffle(messages)
+    return messages[:n]
+
+
 def fetch_random_images(
     token: str,
     channel: str,

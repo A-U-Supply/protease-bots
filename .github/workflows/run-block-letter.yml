@@ -18,6 +18,9 @@ on:
       angle:
         description: 'Isometric angle in degrees (default 30)'
         default: '30'
+      text_channel:
+        description: 'Slack channel to fetch song titles from (default: song-titles)'
+        default: 'song-titles'
 
 jobs:
   run:
@@ -43,4 +46,5 @@ jobs:
             --post-channel "${{ inputs.post_channel }}" \
             --font-size "${{ inputs.font_size }}" \
             --depth "${{ inputs.depth }}" \
-            --angle "${{ inputs.angle }}"
+            --angle "${{ inputs.angle }}" \
+            --text-channel "${{ inputs.text_channel }}"

@@ -18,6 +18,7 @@ import logging
 import math
 import os
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -76,14 +77,18 @@ def _face_uv(xx, yy, origin, vec_a, vec_b):
 
 
 def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
-                glyph_mask=None, glyph_W=None, glyph_H=None):
-    """Sample source image onto a parallelogram face and write into output."""
+                glyph_mask=None, glyph_W=None, glyph_H=None,
+                src_x_min=0, src_x_max=None):
+    """Sample source image onto a parallelogram face and write into output.
+
+    src_x_min / src_x_max define the horizontal strip of the source image to
+    sample from, allowing each letter to use a different section.
+    """
     u, v, inside = _face_uv(xx, yy, origin, vec_a, vec_b)
     if not inside.any():
         return
 
     if glyph_mask is not None:
-        # Mask front face to letter glyph outline
         u_px = (u * (glyph_W - 1)).clip(0, glyph_W - 1).astype(np.int32)
         v_px = (v * (glyph_H - 1)).clip(0, glyph_H - 1).astype(np.int32)
         inside = inside & glyph_mask[v_px, u_px]
@@ -91,7 +96,9 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
             return
 
     sh, sw = src_f.shape[:2]
-    sx = (u[inside] * (sw - 1)).clip(0, sw - 1).astype(np.int32)
+    if src_x_max is None:
+        src_x_max = sw - 1
+    sx = (src_x_min + u[inside] * (src_x_max - src_x_min)).clip(0, sw - 1).astype(np.int32)
     sy = (v[inside] * (sh - 1)).clip(0, sh - 1).astype(np.int32)
     output[inside] = (src_f[sy, sx] * brightness).clip(0, 255)
 
@@ -152,7 +159,10 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     top_faces   = []
     front_faces = []
 
-    for c, bbox, W, H in char_data:
+    n_letters = len(char_data)
+    src_sw = src_f.shape[1]
+
+    for i, (c, bbox, W, H) in enumerate(char_data):
         x0 = x_cursor
         y0 = y0_base
 
@@ -164,21 +174,25 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
 
+        # Horizontal strip of source image for this letter
+        x_min = int(i / n_letters * src_sw)
+        x_max = int((i + 1) / n_letters * src_sw) - 1
+
         # Right face: top-right corner → back → down
-        right_faces.append(((x0 + W, y0), vec_back, vec_down, None, None, None))
+        right_faces.append(((x0 + W, y0), vec_back, vec_down, None, None, None, x_min, x_max))
         # Top face: top-left corner → right → back
-        top_faces.append(((x0, y0), vec_right, vec_back, None, None, None))
+        top_faces.append(((x0, y0), vec_right, vec_back, None, None, None, x_min, x_max))
         # Front face: top-left corner → right → down, masked to glyph
-        front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H))
+        front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H, x_min, x_max))
 
         x_cursor += W + letter_spacing
 
-    for origin, va, vb, gm, gW, gH in right_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_right, gm, gW, gH)
-    for origin, va, vb, gm, gW, gH in top_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_top, gm, gW, gH)
-    for origin, va, vb, gm, gW, gH in front_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH)
+    for origin, va, vb, gm, gW, gH, xmn, xmx in right_faces:
+        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_right, gm, gW, gH, xmn, xmx)
+    for origin, va, vb, gm, gW, gH, xmn, xmx in top_faces:
+        _paint_face(output, src_f, xx, yy, origin, va, vb, shade_top, gm, gW, gH, xmn, xmx)
+    for origin, va, vb, gm, gW, gH, xmn, xmx in front_faces:
+        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx)
 
     return output.clip(0, 255).astype(np.uint8)
 
@@ -190,8 +204,10 @@ def main():
     parser.add_argument("--source-channel", default="image-gen")
     parser.add_argument("--post-channel",   default="img-junkyard")
     parser.add_argument("--output-dir", type=Path, default=Path("./block-letter-bot-output"))
-    parser.add_argument("--words", default=",".join(WORD_LIST),
-                        help="Comma-separated word list to choose from")
+    parser.add_argument("--text-channel", default="song-titles",
+                        help="Slack channel to fetch text from (default: song-titles)")
+    parser.add_argument("--words", default="",
+                        help="Comma-separated fallback word list (used if --text-channel is empty)")
     parser.add_argument("--font-size", type=int, default=200)
     parser.add_argument("--depth",     type=int, default=70,
                         help="Extrusion depth in pixels (default 70)")
@@ -205,10 +221,26 @@ def main():
         print("Error: SLACK_BOT_TOKEN required", file=sys.stderr)
         sys.exit(1)
 
-    from slack_fetcher import fetch_random_images
+    from slack_fetcher import fetch_random_images, fetch_random_message_texts
     from slack_poster import post_collages
 
-    word_list = [w.strip().upper() for w in args.words.split(",") if w.strip()]
+    if args.text_channel:
+        raw_titles = fetch_random_message_texts(token, args.text_channel, 50)
+        word_list = []
+        for t in raw_titles:
+            # Take first line only — ignore multi-line messages
+            first_line = t.split("\n")[0].strip()
+            cleaned = re.sub(r"[^A-Za-z\s]", "", first_line).strip().upper()
+            # Skip if too long (likely a sentence, not a title)
+            if cleaned and len(cleaned) <= 40:
+                word_list.append(cleaned)
+        if not word_list:
+            word_list = [w.strip().upper() for w in args.words.split(",") if w.strip()]
+    else:
+        word_list = [w.strip().upper() for w in args.words.split(",") if w.strip()]
+
+    if not word_list:
+        word_list = WORD_LIST
 
     source_dir = args.output_dir / "source"
     out_dir    = args.output_dir / "output"
