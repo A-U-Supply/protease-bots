@@ -78,11 +78,11 @@ def _face_uv(xx, yy, origin, vec_a, vec_b):
 
 def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
                 glyph_mask=None, glyph_W=None, glyph_H=None,
-                src_x_min=0, src_x_max=None):
+                src_x_min=0, src_x_max=None, src_y_min=0, src_y_max=None):
     """Sample source image onto a parallelogram face and write into output.
 
-    src_x_min / src_x_max define the horizontal strip of the source image to
-    sample from, allowing each letter to use a different section.
+    src_x_min/src_x_max and src_y_min/src_y_max define the square crop of
+    the source image to sample from, one crop per letter.
     """
     u, v, inside = _face_uv(xx, yy, origin, vec_a, vec_b)
     if not inside.any():
@@ -98,24 +98,24 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
     sh, sw = src_f.shape[:2]
     if src_x_max is None:
         src_x_max = sw - 1
+    if src_y_max is None:
+        src_y_max = sh - 1
     sx = (src_x_min + u[inside] * (src_x_max - src_x_min)).clip(0, sw - 1).astype(np.int32)
-    sy = (v[inside] * (sh - 1)).clip(0, sh - 1).astype(np.int32)
+    sy = (src_y_min + v[inside] * (src_y_max - src_y_min)).clip(0, sh - 1).astype(np.int32)
     output[inside] = (src_f[sy, sx] * brightness).clip(0, 255)
 
 
 def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
-                          brightness, src_x_min, src_x_max, face):
+                          brightness, src_x_min, src_x_max, src_y_min, src_y_max, face):
     """Paint an extruded edge face that follows the letter contour.
 
     face='right': edge_profile[y] = rightmost x in glyph row y  (-1 = no pixels)
     face='top':   edge_profile[x] = topmost  y in glyph col x   (H = no pixels)
 
     For each valid row/col, extrudes the edge pixel along the isometric
-    direction (iso_dx, -iso_dy), sampling the source image along the way.
+    direction (iso_dx, -iso_dy), sampling from the letter's square source crop.
     """
     sh, sw = src_f.shape[:2]
-    if src_x_max is None:
-        src_x_max = sw - 1
     n_steps = max(abs(iso_dx), abs(iso_dy), 1) + 1
     ts = np.linspace(0, 1, n_steps)   # (n_steps,)
 
@@ -130,9 +130,10 @@ def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
         px = np.round(x0 + xr[:, None] + ts[None, :] * iso_dx).astype(int)
         py = np.round(y0 + valid[:, None] - ts[None, :] * iso_dy).astype(int)
 
-        # Source coords
+        # Source coords — t maps to x within crop, glyph row maps to y within crop
         src_x = np.clip(src_x_min + ts * (src_x_max - src_x_min), 0, sw - 1).astype(int)
-        src_y = np.clip(valid / max(H_total - 1, 1) * (sh - 1), 0, sh - 1).astype(int)
+        src_y = np.clip(src_y_min + valid / max(H_total - 1, 1) * (src_y_max - src_y_min),
+                        0, sh - 1).astype(int)
         sx = np.broadcast_to(src_x[None, :], px.shape)
         sy = np.broadcast_to(src_y[:, None], px.shape)
 
@@ -146,9 +147,10 @@ def _paint_edge_extrusion(output, src_f, x0, y0, edge_profile, iso_dx, iso_dy,
         px = np.round(x0 + valid[:, None] + ts[None, :] * iso_dx).astype(int)
         py = np.round(y0 + yt[:, None]    - ts[None, :] * iso_dy).astype(int)
 
+        # Source coords — glyph col maps to x within crop, t maps to y within crop
         src_x = np.clip(src_x_min + valid / max(W_total - 1, 1) * (src_x_max - src_x_min),
                         0, sw - 1).astype(int)
-        src_y = np.clip(ts * (sh - 1), 0, sh - 1).astype(int)
+        src_y = np.clip(src_y_min + ts * (src_y_max - src_y_min), 0, sh - 1).astype(int)
         sx = np.broadcast_to(src_x[:, None], px.shape)
         sy = np.broadcast_to(src_y[None, :], px.shape)
 
@@ -211,7 +213,13 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     front_faces = []
 
     n_letters = len(char_data)
-    src_sw = src_f.shape[1]
+    src_sh, src_sw = src_f.shape[:2]
+
+    # Square crop size: divide source width by number of letters
+    square = src_sw // max(n_letters, 1)
+    # Vertically center the crop within the source image
+    crop_y0 = max(0, src_sh // 2 - square // 2)
+    crop_y1 = min(src_sh - 1, crop_y0 + square - 1)
 
     for i, (c, bbox, W, H) in enumerate(char_data):
         x0 = x_cursor
@@ -236,23 +244,26 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         x_right = np.where(glyph_mask, col_idx[None, :], -1).max(axis=1)   # (H,) rightmost x per row
         y_top   = np.where(glyph_mask, row_idx[:, None], H).min(axis=0)    # (W,) topmost y per col
 
-        # Horizontal strip of source image for this letter
-        x_min = int(i / n_letters * src_sw)
-        x_max = int((i + 1) / n_letters * src_sw) - 1
+        # Square crop for this letter
+        x_min = i * square
+        x_max = min(x_min + square - 1, src_sw - 1)
+        y_min = crop_y0
+        y_max = crop_y1
 
         # Paint edge extrusions (right then top; front face will overdraw)
         _paint_edge_extrusion(output, src_f, x0, y0, x_right, iso_dx, iso_dy,
-                              shade_right, x_min, x_max, face='right')
+                              shade_right, x_min, x_max, y_min, y_max, face='right')
         _paint_edge_extrusion(output, src_f, x0, y0, y_top, iso_dx, iso_dy,
-                              shade_top, x_min, x_max, face='top')
+                              shade_top, x_min, x_max, y_min, y_max, face='top')
 
         # Front face: top-left corner → right → down, masked to glyph
-        front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H, x_min, x_max))
+        front_faces.append(((x0, y0), vec_right, vec_down, glyph_mask, W, H,
+                             x_min, x_max, y_min, y_max))
 
         x_cursor += W + letter_spacing
 
-    for origin, va, vb, gm, gW, gH, xmn, xmx in front_faces:
-        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx)
+    for origin, va, vb, gm, gW, gH, xmn, xmx, ymn, ymx in front_faces:
+        _paint_face(output, src_f, xx, yy, origin, va, vb, 1.0, gm, gW, gH, xmn, xmx, ymn, ymx)
 
     return output.clip(0, 255).astype(np.uint8)
 
