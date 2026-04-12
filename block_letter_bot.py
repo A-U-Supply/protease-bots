@@ -171,6 +171,22 @@ def _paint_face(output, src_f, xx, yy, origin, vec_a, vec_b, brightness,
     output[inside] = np.concatenate([rgb, np.full((len(rgb), 1), 255.0)], axis=1)
 
 
+def _close_diagonal_gaps(mask):
+    """Add bridge pixels between diagonally adjacent edge pixels.
+
+    When two edge pixels are diagonally adjacent (offset by 1 in both row and col),
+    their extruded strips leave a 1-pixel diagonal gap.  Adding a bridge pixel for
+    each such pair ensures the strips overlap and no transparent holes appear.
+    """
+    out = mask.copy()
+    if mask.shape[0] > 1 and mask.shape[1] > 1:
+        # Down-right pair: (r,c) and (r+1,c+1) → bridge at (r+1, c)
+        out[1:, :-1] |= mask[:-1, :-1] & mask[1:, 1:]
+        # Down-left pair:  (r,c+1) and (r+1,c)  → bridge at (r+1, c+1)
+        out[1:, 1:]  |= mask[:-1, 1:]  & mask[1:, :-1]
+    return out
+
+
 def _paint_edge_extrusion(output, src_f, x0, y0, edge_mask, iso_dx, iso_dy,
                           brightness, src_x_min, src_x_max, src_y_min, src_y_max, face):
     """Paint extruded edge faces following all letter contours including inner holes.
@@ -317,6 +333,10 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         top_above = np.zeros_like(glyph_mask)
         top_above[1:, :] = glyph_mask[:-1, :]
         top_edge = glyph_mask & ~top_above      # glyph pixel with no glyph above
+
+        # Bridge diagonal gaps so curved/diagonal edges extrude without holes
+        right_edge = _close_diagonal_gaps(right_edge)
+        top_edge   = _close_diagonal_gaps(top_edge)
 
         # Assign a random tile from the grid to this letter
         ty, tx = tile_origins[i]
