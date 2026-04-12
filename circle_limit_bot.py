@@ -78,7 +78,7 @@ def polar_to_circle(img_arr: np.ndarray) -> np.ndarray:
 
 
 def circle_limit_warp(img_arr: np.ndarray, radius: float = 0.95,
-                      zoom: float = 25.0, tile: bool = False,
+                      zoom: float = 6.0, tile: bool = False,
                       cx: float = None, cy: float = None) -> np.ndarray:
     """Apply Poincaré disk backward warp (Escher Circle Limit geometry).
 
@@ -144,7 +144,7 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("./circle-limit-bot-output"))
     parser.add_argument("--radius", type=float, default=0.95,
                         help="Disk radius as fraction of image half-side (default 0.95)")
-    parser.add_argument("--zoom", type=float, default=25.0,
+    parser.add_argument("--zoom", type=float, default=6.0,
                         help="Tile ring density; higher = more rings visible (default 25.0)")
     parser.add_argument("--polar", action="store_true",
                         help="Pre-warp source into circle before tiling (meta effect)")

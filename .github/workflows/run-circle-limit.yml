@@ -10,8 +10,8 @@ on:
         description: 'Channel to post results to'
         default: 'img-junkyard'
       zoom:
-        description: 'Tile ring density; higher = more rings visible (default 25.0)'
-        default: '25.0'
+        description: 'Tile ring density; higher = more rings visible (default 6.0)'
+        default: '6.0'
       radius:
         description: 'Disk radius as fraction of image half-side (default 0.95)'
         default: '0.95'
