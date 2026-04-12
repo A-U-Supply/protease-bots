@@ -40,14 +40,16 @@ def polar_to_circle(img_arr: np.ndarray) -> np.ndarray:
 
     Maps image columns around the 360° circumference (x → θ) and rows
     radially from the outer edge inward (y=0 → outer ring, y=h → centre).
-    Output is a square image the size of the shorter side, black outside
-    the circle.
+
+    Pixels outside the circle are filled by inverting r through the boundary
+    (r → 1/r), sampling the mirror-image of the interior. This fills the
+    square tile corners seamlessly so no black gaps appear between tiles.
 
     Args:
         img_arr: uint8 (H, W, 3) source image
 
     Returns:
-        uint8 (S, S, 3) circular image where S = min(H, W)
+        uint8 (S, S, 3) square tile where S = min(H, W)
     """
     h, w = img_arr.shape[:2]
     s = min(w, h)
@@ -65,16 +67,14 @@ def polar_to_circle(img_arr: np.ndarray) -> np.ndarray:
 
     theta = (np.arctan2(dy, dx) / (2.0 * math.pi)) % 1.0  # 0 to 1
 
-    # Source x wraps around full circumference; source y maps outer→inner
-    x_src = theta * w                # columns wrap around the circle
-    y_src = r_norm * h               # rows go from centre (0) to outer (h)
+    # Inside circle: normal polar sample. Outside: invert through boundary (r → 1/r).
+    r_safe = np.maximum(r_norm, 1e-10)
+    r_sample = np.where(r_norm <= 1.0, r_norm, 1.0 / r_safe)
 
-    # Wrap x, clamp y (handled by _bilinear clipping)
-    x_src_wrapped = x_src % w
-    result = _bilinear(img_arr, x_src_wrapped, y_src)
+    x_src = (theta * w) % w
+    y_src = r_sample * h
 
-    result[r_norm >= 1.0] = 0
-    return result
+    return _bilinear(img_arr, x_src, y_src)
 
 
 def circle_limit_warp(img_arr: np.ndarray, radius: float = 0.95,
