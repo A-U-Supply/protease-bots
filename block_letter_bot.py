@@ -55,6 +55,8 @@ WORD_LIST = [
 
 # Font catalog: (display_name, [path_candidates]) — multiple paths handle
 # different distro layouts for the same font.
+_BUNDLED_FONT_DIR = str(Path(__file__).parent / "fonts")
+
 _FONT_CATALOG = [
     ("Liberation Sans Bold", [
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
@@ -95,6 +97,32 @@ _FONT_CATALOG = [
     ("Arial Black",       ["/System/Library/Fonts/Supplemental/Arial Black.ttf"]),
     ("Verdana Bold",      ["/System/Library/Fonts/Supplemental/Verdana Bold.ttf"]),
     ("Arial Narrow Bold", ["/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf"]),
+    # Bundled Google Fonts (committed to /fonts in repo — work locally and in CI)
+    ("Anton",          [f"{_BUNDLED_FONT_DIR}/Anton-Regular.ttf"]),
+    ("Alfa Slab One",  [f"{_BUNDLED_FONT_DIR}/AlfaSlabOne-Regular.ttf"]),
+    ("Bangers",        [f"{_BUNDLED_FONT_DIR}/Bangers-Regular.ttf"]),
+    ("Black Ops One",  [f"{_BUNDLED_FONT_DIR}/BlackOpsOne-Regular.ttf"]),
+    ("Boogaloo",       [f"{_BUNDLED_FONT_DIR}/Boogaloo-Regular.ttf"]),
+    ("Lobster",        [f"{_BUNDLED_FONT_DIR}/Lobster-Regular.ttf"]),
+    ("Pacifico",       [f"{_BUNDLED_FONT_DIR}/Pacifico-Regular.ttf"]),
+    ("Righteous",      [f"{_BUNDLED_FONT_DIR}/Righteous-Regular.ttf"]),
+    ("Russo One",      [f"{_BUNDLED_FONT_DIR}/RussoOne-Regular.ttf"]),
+    ("Squada One",     [f"{_BUNDLED_FONT_DIR}/SquadaOne-Regular.ttf"]),
+    # Linux apt fonts (installed by workflow)
+    ("Open Sans Bold",  ["/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf"]),
+    ("Lato Bold",       ["/usr/share/fonts/truetype/lato/Lato-Bold.ttf"]),
+    ("Lato Black",      ["/usr/share/fonts/truetype/lato/Lato-Black.ttf"]),
+    ("Arimo Bold",      ["/usr/share/fonts/truetype/croscore/Arimo-Bold.ttf"]),
+    ("Tinos Bold",      ["/usr/share/fonts/truetype/croscore/Tinos-Bold.ttf"]),
+    ("Cousine Bold",    ["/usr/share/fonts/truetype/croscore/Cousine-Bold.ttf"]),
+    ("Carlito Bold",    ["/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf"]),
+    ("Caladea Bold",    ["/usr/share/fonts/truetype/crosextra/Caladea-Bold.ttf"]),
+    ("Droid Sans Bold", ["/usr/share/fonts/truetype/droid/DroidSans-Bold.ttf"]),
+    ("Droid Serif Bold",["/usr/share/fonts/truetype/droid/DroidSerif-Bold.ttf"]),
+    ("Roboto Bold",     ["/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Bold.ttf",
+                         "/usr/share/fonts/truetype/roboto/unhinted/Roboto-Bold.ttf"]),
+    ("Roboto Black",    ["/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Black.ttf",
+                         "/usr/share/fonts/truetype/roboto/unhinted/Roboto-Black.ttf"]),
 ]
 
 
