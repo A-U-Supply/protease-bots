@@ -419,6 +419,8 @@ def main():
                         help="Extrusion depth in pixels (default 70)")
     parser.add_argument("--angle",     type=float, default=30.0,
                         help="Isometric angle in degrees (default 30)")
+    parser.add_argument("--font-name", default="random",
+                        help="Font name from catalog, or 'random' to pick automatically (default)")
     parser.add_argument("--no-post",   action="store_true")
     args = parser.parse_args()
 
@@ -463,12 +465,20 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     available_fonts = _available_fonts()
-    if available_fonts:
+    if args.font_name and args.font_name != "random":
+        entry = next((e for e in _FONT_CATALOG if e[0] == args.font_name), None)
+        chosen_font_path = next((p for p in entry[1] if Path(p).exists()), None) if entry else None
+        if chosen_font_path:
+            chosen_font_name = args.font_name
+        else:
+            logger.warning(f"Font '{args.font_name}' not found on disk, falling back to random")
+            chosen_font_name, chosen_font_path = random.choice(available_fonts) if available_fonts else ("default", None)
+    elif available_fonts:
         chosen_font_name, chosen_font_path = random.choice(available_fonts)
-        logger.info(f"Using font: {chosen_font_name}")
     else:
         chosen_font_name, chosen_font_path = "default", None
         logger.warning("No catalog fonts found, using PIL default")
+    logger.info(f"Using font: {chosen_font_name}")
 
     logger.info(f"Fetching 3 images from #{args.source_channel}...")
     source_paths = list(fetch_random_images(token, args.source_channel, 3, source_dir))

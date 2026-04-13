@@ -24,6 +24,19 @@ on:
       custom_text:
         description: 'Manual text to use instead of scraping (leave blank to use song-titles)'
         default: ''
+      font:
+        description: 'Font to use (leave as random to pick automatically)'
+        default: 'random'
+        type: choice
+        options:
+          - random
+          - Liberation Sans Bold
+          - Liberation Serif Bold
+          - DejaVu Sans Bold
+          - DejaVu Serif Bold
+          - FreeSans Bold
+          - FreeSerif Bold
+          - Ubuntu Bold
       max_chars:
         description: 'Max characters per wrapped line (default 15)'
         default: '15'
@@ -55,4 +68,5 @@ jobs:
             --angle "${{ inputs.angle }}" \
             --text-channel "${{ inputs.text_channel }}" \
             --custom-text "${{ inputs.custom_text }}" \
+            --font-name "${{ inputs.font }}" \
             --max-chars "${{ inputs.max_chars }}"
