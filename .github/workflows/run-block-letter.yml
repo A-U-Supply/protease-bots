@@ -21,6 +21,9 @@ on:
       text_channel:
         description: 'Slack channel to fetch song titles from (default: song-titles)'
         default: 'song-titles'
+      custom_text:
+        description: 'Manual text to use instead of scraping (leave blank to use song-titles)'
+        default: ''
       max_chars:
         description: 'Max characters per wrapped line (default 15)'
         default: '15'
@@ -51,4 +54,5 @@ jobs:
             --depth "${{ inputs.depth }}" \
             --angle "${{ inputs.angle }}" \
             --text-channel "${{ inputs.text_channel }}" \
+            --custom-text "${{ inputs.custom_text }}" \
             --max-chars "${{ inputs.max_chars }}"

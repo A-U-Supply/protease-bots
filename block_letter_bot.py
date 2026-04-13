@@ -408,6 +408,8 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("./block-letter-bot-output"))
     parser.add_argument("--text-channel", default="song-titles",
                         help="Slack channel to fetch text from (default: song-titles)")
+    parser.add_argument("--custom-text", default="",
+                        help="Manually entered text; if non-empty, skips Slack fetch entirely")
     parser.add_argument("--words", default="",
                         help="Comma-separated fallback word list (used if --text-channel is empty)")
     parser.add_argument("--font-size",  type=int, default=200)
@@ -428,7 +430,14 @@ def main():
     from slack_fetcher import fetch_random_images, fetch_random_message_texts
     from slack_poster import post_collages
 
-    if args.text_channel:
+    if args.custom_text.strip():
+        # Manual text overrides Slack fetch entirely; treat each line as a candidate
+        word_list = [
+            line.strip().upper()
+            for line in args.custom_text.strip().splitlines()
+            if line.strip()
+        ]
+    elif args.text_channel:
         raw_titles = fetch_random_message_texts(token, args.text_channel, 50)
         word_list = []
         for t in raw_titles:
