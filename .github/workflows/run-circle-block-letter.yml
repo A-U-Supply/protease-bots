@@ -1,0 +1,58 @@
+name: Run Circle Block Letter Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_channel:
+        description: 'Channel to fetch images from'
+        default: 'image-gen'
+      post_channel:
+        description: 'Channel to post results to'
+        default: 'img-junkyard'
+      font_size:
+        description: 'Letter height in pixels (default 120)'
+        default: '120'
+      depth:
+        description: 'Extrusion depth in pixels (default 60)'
+        default: '60'
+      angle:
+        description: 'Isometric angle in degrees (default 30)'
+        default: '30'
+      circle_radius:
+        description: 'Radius of the letter ring in pixels (default 280)'
+        default: '280'
+      max_letters:
+        description: 'Max letters to place on the circle (default 14)'
+        default: '14'
+      text_channel:
+        description: 'Slack channel to fetch song titles from (default: song-titles)'
+        default: 'song-titles'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get install -y fonts-liberation fonts-dejavu-core fonts-freefont-ttf fonts-ubuntu
+
+      - name: Run circle block letter bot
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python circle_block_letter_bot.py \
+            --source-channel "${{ inputs.source_channel }}" \
+            --post-channel "${{ inputs.post_channel }}" \
+            --font-size "${{ inputs.font_size }}" \
+            --depth "${{ inputs.depth }}" \
+            --angle "${{ inputs.angle }}" \
+            --circle-radius "${{ inputs.circle_radius }}" \
+            --max-letters "${{ inputs.max_letters }}" \
+            --text-channel "${{ inputs.text_channel }}"
