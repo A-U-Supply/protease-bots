@@ -285,8 +285,10 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     max_h   = max(d[3] for d in char_data)
 
     pad    = 40
-    out_w  = total_w + 2 * iso_dx + 2 * pad
-    out_h  = max_h   + iso_dy + 2 * pad
+    # Use abs so the canvas is large enough for any extrusion direction.
+    # iso_dx or iso_dy can be negative when angle_deg is outside [0°, 90°].
+    out_w  = total_w + 2 * abs(iso_dx) + 2 * pad
+    out_h  = max_h   + abs(iso_dy) + 2 * pad
 
     output = np.zeros((out_h, out_w, 4), dtype=np.float32)
     src_f  = src_arr.astype(np.float32)
@@ -295,8 +297,8 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
     ys = np.arange(out_h, dtype=np.float64)
     xx, yy = np.meshgrid(xs, ys)
 
-    x_cursor = iso_dx + pad     # leave room on left for extrusion overhang
-    y0_base  = iso_dy + pad     # top-left of each front face
+    x_cursor = abs(iso_dx) + pad   # room on both sides for any extrusion direction
+    y0_base  = abs(iso_dy) + pad
 
     vec_back = np.array([iso_dx, -iso_dy], dtype=float)  # extrusion direction
 
@@ -341,25 +343,35 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         ImageDraw.Draw(glyph_img).text((-bbox[0], -bbox[1]), c, font=font, fill=255)
         glyph_mask = np.array(glyph_img) > 128
 
-        # Right edge: only the outermost right pixel per row.
-        # Inner hole boundaries (e.g. inside O, B, P) must not be extruded as
-        # a right face — they create phantom layers behind the letter.
-        right_edge = np.zeros_like(glyph_mask)
+        # Horizontal edge: outermost pixel per row in the extrusion's x direction.
+        # Only the outermost pixel is used to avoid phantom inner-hole layers
+        # (e.g. inside O, B, P).
+        horiz_edge = np.zeros_like(glyph_mask)
         for r in range(H):
-            cols = np.where(glyph_mask[r])[0]
-            if len(cols):
-                right_edge[r, cols[-1]] = True
+            row_cols = np.where(glyph_mask[r])[0]
+            if len(row_cols):
+                # iso_dx >= 0 → extrusion goes right → show right face (outermost right)
+                # iso_dx <  0 → extrusion goes left  → show left face  (outermost left)
+                horiz_edge[r, row_cols[-1] if iso_dx >= 0 else row_cols[0]] = True
 
-        # Top edge: topmost pixel per column, including inner hole tops.
-        # Inner hole tops (e.g. the ceiling of O's counter) ARE visible from
-        # above and should be extruded as a top face.
-        top_above = np.zeros_like(glyph_mask)
-        top_above[1:, :] = glyph_mask[:-1, :]
-        top_edge = glyph_mask & ~top_above      # glyph pixel with no glyph above
+        # Vertical edge: outermost pixel per column in the extrusion's y direction.
+        # Inner hole edges on the same side as the extrusion are also included
+        # (e.g. ceiling of O's counter is visible when extrusion goes up).
+        vert_edge = np.zeros_like(glyph_mask)
+        if iso_dy >= 0:
+            # Extrusion goes up → show top face: topmost pixel per column
+            above = np.zeros_like(glyph_mask)
+            above[1:, :] = glyph_mask[:-1, :]
+            vert_edge = glyph_mask & ~above
+        else:
+            # Extrusion goes down → show bottom face: bottommost pixel per column
+            below = np.zeros_like(glyph_mask)
+            below[:-1, :] = glyph_mask[1:, :]
+            vert_edge = glyph_mask & ~below
 
         # Fill column/row gaps so curved edges extrude without transparent stripes
-        right_edge = _fill_edge_gaps(right_edge)
-        top_edge   = _fill_edge_gaps(top_edge.T).T
+        horiz_edge = _fill_edge_gaps(horiz_edge)
+        vert_edge  = _fill_edge_gaps(vert_edge.T).T
 
         # Assign a random tile from the grid to this letter
         ty, tx = tile_origins[i]
@@ -368,10 +380,10 @@ def render_block_word(word, src_arr, font_size=200, depth_px=70, angle_deg=30,
         y_min = ty
         y_max = ty + tile_size - 1
 
-        # Paint edge extrusions (right then top; front face will overdraw)
-        _paint_edge_extrusion(output, src_f, x0, y0, right_edge, iso_dx, iso_dy,
+        # Paint edge extrusions (horiz then vert; front face will overdraw)
+        _paint_edge_extrusion(output, src_f, x0, y0, horiz_edge, iso_dx, iso_dy,
                               shade_right, x_min, x_max, y_min, y_max, face='right')
-        _paint_edge_extrusion(output, src_f, x0, y0, top_edge, iso_dx, iso_dy,
+        _paint_edge_extrusion(output, src_f, x0, y0, vert_edge, iso_dx, iso_dy,
                               shade_top, x_min, x_max, y_min, y_max, face='top')
 
         # Front face: top-left corner → right → down, masked to glyph

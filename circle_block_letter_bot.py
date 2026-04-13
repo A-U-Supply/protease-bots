@@ -32,23 +32,24 @@ from block_letter_bot import (
 logger = logging.getLogger(__name__)
 
 
-def render_circle_word(word, src_arr, font_size=120, depth_px=60, angle_deg=30,
+def render_circle_word(word, src_arr, font_size=120, depth_px=60,
                        letter_spacing=12, max_letters=14, font_path=None):
     """Render letters of `word` in a circle, each extruding inward toward center.
 
     Letters are placed starting from 12 o'clock going clockwise, with spacing
     proportional to each letter's actual glyph width so they sit snugly around
     the ring.  The circle radius is computed so the circumference equals the
-    total letter widths plus inter-letter spacing.  Each rendered letter image
-    is rotated so that its isometric extrusion (normally upper-right) points
-    radially toward the center, producing an exploding-outward starburst.
+    total letter widths plus inter-letter spacing.
+
+    Each letter's extrusion angle is computed from its position on the circle
+    so that the 3D depth converges on the circle center — the vanishing point
+    is at the center.
 
     Args:
         word:           Text to render (only printable non-space chars used)
         src_arr:        uint8 (H, W, 3) source image for texturing
         font_size:      Letter height in pixels (default 120)
         depth_px:       Extrusion depth in pixels (default 60)
-        angle_deg:      Isometric extrusion angle (default 30)
         letter_spacing: Gap between letters in pixels (default 12)
         max_letters:    Maximum letters to place on the circle (default 14)
         font_path:      Optional explicit font path
@@ -94,12 +95,20 @@ def render_circle_word(word, src_arr, font_size=120, depth_px=60, angle_deg=30,
         # Convert to standard CCW angle from positive x-axis.
         theta = 90.0 - math.degrees(arc_angle_rad)
 
+        # Compute the extrusion angle for this letter's position.
+        # Derivation: after PIL CCW rotation by (210° - theta), an extrusion
+        # rendered at angle alpha ends up in direction (cos(alpha + rot),
+        # -sin(alpha + rot)) in screen coords.  Setting this equal to the
+        # inward radial direction (-cos(theta), sin(theta)) requires
+        # alpha + rot = 180° + theta, giving alpha = 2*theta - 30°.
+        letter_angle_deg = 2.0 * theta - 30.0
+
         # Render single letter as RGBA using the block-letter pipeline.
         letter_arr = render_block_word(
             char, src_arr,
             font_size=font_size,
             depth_px=depth_px,
-            angle_deg=angle_deg,
+            angle_deg=letter_angle_deg,
             font_path=font_path,
         )
         letter_img = Image.fromarray(letter_arr)
@@ -167,8 +176,6 @@ def main():
     parser.add_argument("--font-size",     type=int,   default=120)
     parser.add_argument("--depth",         type=int,   default=60,
                         help="Extrusion depth in pixels (default 60)")
-    parser.add_argument("--angle",         type=float, default=30.0,
-                        help="Isometric angle in degrees (default 30)")
     parser.add_argument("--letter-spacing", type=int,   default=12,
                         help="Gap between letters in pixels (default 12)")
     parser.add_argument("--max-letters",   type=int,   default=14,
@@ -235,7 +242,6 @@ def main():
             word, arr,
             font_size=args.font_size,
             depth_px=args.depth,
-            angle_deg=args.angle,
             letter_spacing=args.letter_spacing,
             max_letters=args.max_letters,
             font_path=chosen_font_path,
