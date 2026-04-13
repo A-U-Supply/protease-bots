@@ -18,9 +18,9 @@ on:
       angle:
         description: 'Isometric angle in degrees (default 30)'
         default: '30'
-      circle_radius:
-        description: 'Radius of the letter ring in pixels (default 280)'
-        default: '280'
+      letter_spacing:
+        description: 'Gap between letters in pixels (default 12)'
+        default: '12'
       max_letters:
         description: 'Max letters to place on the circle (default 14)'
         default: '14'
@@ -53,6 +53,6 @@ jobs:
             --font-size "${{ inputs.font_size }}" \
             --depth "${{ inputs.depth }}" \
             --angle "${{ inputs.angle }}" \
-            --circle-radius "${{ inputs.circle_radius }}" \
+            --letter-spacing "${{ inputs.letter_spacing }}" \
             --max-letters "${{ inputs.max_letters }}" \
             --text-channel "${{ inputs.text_channel }}"

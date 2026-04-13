@@ -25,6 +25,7 @@ from PIL import Image
 from block_letter_bot import (
     WORD_LIST,
     _available_fonts,
+    _load_font,
     render_block_word,
 )
 
@@ -32,23 +33,25 @@ logger = logging.getLogger(__name__)
 
 
 def render_circle_word(word, src_arr, font_size=120, depth_px=60, angle_deg=30,
-                       circle_radius=280, max_letters=14, font_path=None):
+                       letter_spacing=12, max_letters=14, font_path=None):
     """Render letters of `word` in a circle, each extruding inward toward center.
 
-    Letters are placed at equal angles starting from 12 o'clock going
-    clockwise.  Each rendered letter image is rotated so that its isometric
-    extrusion (normally upper-right) points radially toward the center,
-    producing an exploding-outward starburst composition.
+    Letters are placed starting from 12 o'clock going clockwise, with spacing
+    proportional to each letter's actual glyph width so they sit snugly around
+    the ring.  The circle radius is computed so the circumference equals the
+    total letter widths plus inter-letter spacing.  Each rendered letter image
+    is rotated so that its isometric extrusion (normally upper-right) points
+    radially toward the center, producing an exploding-outward starburst.
 
     Args:
-        word:          Text to render (only printable non-space chars used)
-        src_arr:       uint8 (H, W, 3) source image for texturing
-        font_size:     Letter height in pixels (default 120)
-        depth_px:      Extrusion depth in pixels (default 60)
-        angle_deg:     Isometric extrusion angle (default 30)
-        circle_radius: Radius of the letter ring in pixels (default 280)
-        max_letters:   Maximum letters to place on the circle (default 14)
-        font_path:     Optional explicit font path
+        word:           Text to render (only printable non-space chars used)
+        src_arr:        uint8 (H, W, 3) source image for texturing
+        font_size:      Letter height in pixels (default 120)
+        depth_px:       Extrusion depth in pixels (default 60)
+        angle_deg:      Isometric extrusion angle (default 30)
+        letter_spacing: Gap between letters in pixels (default 12)
+        max_letters:    Maximum letters to place on the circle (default 14)
+        font_path:      Optional explicit font path
 
     Returns:
         uint8 (H, W, 4) RGBA image, or None if word has no renderable chars
@@ -58,6 +61,27 @@ def render_circle_word(word, src_arr, font_size=120, depth_px=60, angle_deg=30,
     if N == 0:
         return None
 
+    # Measure each letter's advance width to compute a tight-fitting radius.
+    font = _load_font(font_size, font_path)
+    widths = []
+    for char in letters:
+        try:
+            bb = font.getbbox(char)
+            widths.append(max(1, bb[2] - bb[0]))
+        except AttributeError:
+            widths.append(font_size)
+
+    total_arc = sum(widths) + N * letter_spacing
+    circle_radius = max(1, int(total_arc / (2 * math.pi)))
+    logger.debug(f"  letter widths={widths}, total_arc={total_arc}, radius={circle_radius}")
+
+    # Cumulative arc-center position for each letter (in pixels along the arc).
+    arc_centers = []
+    cumulative = 0
+    for w in widths:
+        arc_centers.append(cumulative + w / 2)
+        cumulative += w + letter_spacing
+
     # Canvas large enough to hold all rotated letters
     margin = font_size * 2 + depth_px * 2 + 80
     canvas_size = (circle_radius + margin) * 2
@@ -65,9 +89,10 @@ def render_circle_word(word, src_arr, font_size=120, depth_px=60, angle_deg=30,
     cx = cy = canvas_size // 2
 
     for i, char in enumerate(letters):
-        # Position angle: start at top (12 o'clock), go clockwise.
-        # theta is measured CCW from the positive x-axis (standard math).
-        theta = 90.0 - (360.0 * i / N)
+        # Arc angle from 12 o'clock going clockwise (radians).
+        arc_angle_rad = arc_centers[i] / circle_radius
+        # Convert to standard CCW angle from positive x-axis.
+        theta = 90.0 - math.degrees(arc_angle_rad)
 
         # Render single letter as RGBA using the block-letter pipeline.
         letter_arr = render_block_word(
@@ -144,8 +169,8 @@ def main():
                         help="Extrusion depth in pixels (default 60)")
     parser.add_argument("--angle",         type=float, default=30.0,
                         help="Isometric angle in degrees (default 30)")
-    parser.add_argument("--circle-radius", type=int,   default=280,
-                        help="Radius of the letter ring in pixels (default 280)")
+    parser.add_argument("--letter-spacing", type=int,   default=12,
+                        help="Gap between letters in pixels (default 12)")
     parser.add_argument("--max-letters",   type=int,   default=14,
                         help="Max letters to place on the circle (default 14)")
     parser.add_argument("--no-post", action="store_true")
@@ -211,7 +236,7 @@ def main():
             font_size=args.font_size,
             depth_px=args.depth,
             angle_deg=args.angle,
-            circle_radius=args.circle_radius,
+            letter_spacing=args.letter_spacing,
             max_letters=args.max_letters,
             font_path=chosen_font_path,
         )
