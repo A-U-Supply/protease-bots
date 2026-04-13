@@ -117,8 +117,6 @@ _FONT_CATALOG = [
     ("Cousine Bold",    ["/usr/share/fonts/truetype/croscore/Cousine-Bold.ttf"]),
     ("Carlito Bold",    ["/usr/share/fonts/truetype/crosextra/Carlito-Bold.ttf"]),
     ("Caladea Bold",    ["/usr/share/fonts/truetype/crosextra/Caladea-Bold.ttf"]),
-    ("Droid Sans Bold", ["/usr/share/fonts/truetype/droid/DroidSans-Bold.ttf"]),
-    ("Droid Serif Bold",["/usr/share/fonts/truetype/droid/DroidSerif-Bold.ttf"]),
     ("Roboto Bold",     ["/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Bold.ttf",
                          "/usr/share/fonts/truetype/roboto/unhinted/Roboto-Bold.ttf"]),
     ("Roboto Black",    ["/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Black.ttf",
